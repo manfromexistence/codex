@@ -821,10 +821,12 @@ Look at the g:dx/agent folder and check in the g:dx/agent/inspirations/ openclaw
 
 Now, we will not like use the whole thing but will maintain custom forked version of these 3 projects means we will not need the whole openclaw, hermes-agent and deer-flow  and we will like use it separately - not the whole thing as those 3 in a whole are not that useful to use in any way!!!
 
+```bash
 rm -rf .git node_modules .next
 rm -rf .git && git init && git add . && git commit -m "feat: initial commit"
 bun install && bun run dev
 git clone https://github.com/CoreBunch/Instatic && cd Instatic && rm -rf .git && git init && git add . && git commit -m "feat: initial commit"
+```
 
 In our g:dx/mobile there I have added a dx.html file so please create a a new page in our mobile and make that as the default and then just like using the components shadcn-ui please just recreate the website of dx.html I gave you!!!
 
