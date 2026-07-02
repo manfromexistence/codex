@@ -828,3 +828,8 @@ git clone https://github.com/CoreBunch/Instatic && cd Instatic && rm -rf .git &&
 
 In our g:dx/mobile there I have added a dx.html file so please create a a new page in our mobile and make that as the default and then just like using the components shadcn-ui please just recreate the website of dx.html I gave you!!!
 
+Now, please look at the c drive and tell me what files and folder I can safely delete to space up 40GB space there just research and don't do anything and create a table of what I can safely delete!!!
+
+And in our dx-chat homepage please always use the animateicons lucide-react icons not just lucide-react icons
+
+Now the scroll-area should be on top of the header but currently its behind + at the header the integrations text is going outside of its box at the Resources header subheader
