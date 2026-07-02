@@ -835,3 +835,4 @@ Now, please look at the c drive and tell me what files and folder I can safely d
 And in our dx-chat homepage please always use the animateicons lucide-react icons not just lucide-react icons
 
 Now the scroll-area should be on top of the header but currently its behind + at the header the integrations text is going outside of its box at the Resources header subheader
+
