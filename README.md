@@ -824,5 +824,7 @@ Now, we will not like use the whole thing but will maintain custom forked versio
 rm -rf .git node_modules .next
 rm -rf .git && git init && git add . && git commit -m "feat: initial commit"
 bun install && bun run dev
+git clone https://github.com/CoreBunch/Instatic && cd Instatic && rm -rf .git && git init && git add . && git commit -m "feat: initial commit"
 
 In our g:dx/mobile there I have added a dx.html file so please create a a new page in our mobile and make that as the default and then just like using the components shadcn-ui please just recreate the website of dx.html I gave you!!!
+
