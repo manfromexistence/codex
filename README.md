@@ -879,3 +879,5 @@ $ ls -d */ | sed 's|/||' | nl -w1 -s'. '
 17. style/
 18. train/
 19. www/
+
+Bro wait a sec we have a webgpu option and webllm is for cpu so its for os like ours who has cpu but not gpu so please make it good correctly
