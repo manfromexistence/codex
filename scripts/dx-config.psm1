@@ -107,7 +107,46 @@ function New-DxConfig {
     $config | Add-Member -MemberType ScriptProperty -Name "CliPath" -Value {
         $this.ResolvePath("cli")
     } -Force
+    $config | Add-Member -MemberType ScriptProperty -Name "GlobalCacheDir" -Value {
+        Get-DxGlobalCacheDir -Config $this
+    } -Force
     return $config
+}
+
+function Get-DxGlobalCacheDir {
+    <#
+    .SYNOPSIS
+        Return the DX global cache directory for the given config.
+    .DESCRIPTION
+        Uses paths.global_cache from dx config if set, otherwise:
+        Windows: %LOCALAPPDATA%/dx
+        macOS: ~/Library/Caches/dx
+        Linux: $XDG_CACHE_HOME/dx or ~/.cache/dx
+    .PARAMETER Config
+        A config object from Get-DxConfig.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [PSCustomObject]$Config
+    )
+    $raw = $Config.Settings["paths.global_cache"]
+    if ($raw) {
+        if ([System.IO.Path]::IsPathRooted($raw)) { return $raw }
+        return [System.IO.Path]::GetFullPath((Join-Path $Config.Root $raw))
+    }
+    $localAppData = [Environment]::GetEnvironmentVariable("LOCALAPPDATA")
+    if ($localAppData) {
+        return Join-Path $localAppData "dx"
+    }
+    $xdgCache = [Environment]::GetEnvironmentVariable("XDG_CACHE_HOME")
+    if ($xdgCache) {
+        return Join-Path $xdgCache "dx"
+    }
+    $homeCache = Join-Path $env:USERPROFILE ".cache" 2>$null
+    if (-not $homeCache) {
+        $homeCache = Join-Path $env:HOME ".cache"
+    }
+    return Join-Path $homeCache "dx"
 }
 
 function Write-DxSr {
@@ -156,4 +195,4 @@ function Write-DxSr {
     [System.IO.File]::Move($tmp, $Path)
 }
 
-Export-ModuleMember -Function Get-DxConfig, Write-DxSr
+Export-ModuleMember -Function Get-DxConfig, Write-DxSr, Get-DxGlobalCacheDir

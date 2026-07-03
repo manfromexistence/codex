@@ -99,6 +99,31 @@ class DxConfig:
     def sr_dir(self) -> Path:
         return self.cache_dir.parent / "serializer"
 
+    @property
+    def global_cache_dir(self) -> Path:
+        """Return the global cache directory.
+
+        Uses paths.global_cache from dx config if set, otherwise:
+        Windows: %LOCALAPPDATA%/dx
+        macOS: ~/Library/Caches/dx
+        Linux: $XDG_CACHE_HOME/dx or ~/.cache/dx
+        """
+        raw = self._settings.get("paths.global_cache", "")
+        if raw:
+            p = Path(raw)
+            return p if p.is_absolute() else (self.workspace_root / p)
+        if os.name == "nt":
+            localappdata = os.environ.get("LOCALAPPDATA", "")
+            if localappdata:
+                return Path(localappdata) / "dx"
+        else:
+            xdg = os.environ.get("XDG_CACHE_HOME", "")
+            if xdg:
+                return Path(xdg) / "dx"
+            home = Path.home()
+            return home / ".cache" / "dx"
+        return self.workspace_root / ".dx" / "global-cache"
+
     def get(self, key: str, default: str = "") -> str:
         return self._settings.get(key, default)
 

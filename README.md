@@ -881,3 +881,5 @@ $ ls -d */ | sed 's|/||' | nl -w1 -s'. '
 19. www/
 
 Bro wait a sec we have a webgpu option and webllm is for cpu so its for os like ours who has cpu but not gpu so please make it good correctly
+
+Ollama - you peice of crap I have dx-flow at the g:dx/flow and also connected it for android and ios app - so make sure the android app is correctly builds and build it and also we have our native android app correctly with usb debugging wireless so please build it correctly!!!
