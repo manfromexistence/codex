@@ -10,7 +10,19 @@ param(
     [switch]$Print
 )
 
-$ErrorActionPreference = 'Stop'
+# Load DX config
+$ErrorActionPreference = "Continue"
+$dxConfig = & {
+    $modulePath = Join-Path $PSScriptRoot "dx-config.psm1"
+    if (Test-Path $modulePath) {
+        Import-Module $modulePath -Force -ErrorAction SilentlyContinue | Out-Null
+        $cfg = Get-DxConfig
+        $null = New-Item -ItemType Directory -Force -Path (Join-Path $cfg.SrDir) -ErrorAction SilentlyContinue
+        $null = New-Item -ItemType Directory -Force -Path (Join-Path $cfg.ResolvePath("cache")) -ErrorAction SilentlyContinue
+        $cfg
+    } else { $null }
+}
+$ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 function Get-ProjectProfiles {
@@ -431,3 +443,12 @@ if ($parent) {
 
 Set-Content -LiteralPath $OutputPath -Value $config -Encoding UTF8
 Write-Host "Wrote CircleCI config for $Project to $OutputPath"
+
+# Write .sr for serializer daemon
+if ($dxConfig) {
+    Write-DxSr -Path (Join-Path $dxConfig.SrDir "write-circleci-rust-release-config.sr") -Entries @{
+        tool = "write-circleci-rust-release-config"
+        action = "run"
+        status = "ok"
+    }
+}

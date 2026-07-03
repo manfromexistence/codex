@@ -2,8 +2,20 @@ param(
     [switch]$Json
 )
 
-$ErrorActionPreference = 'Stop'
-$root = Split-Path -Parent $PSScriptRoot
+# Load DX config
+$ErrorActionPreference = "Continue"
+$dxConfig = & {
+    $modulePath = Join-Path $PSScriptRoot "dx-config.psm1"
+    if (Test-Path $modulePath) {
+        Import-Module $modulePath -Force -ErrorAction SilentlyContinue | Out-Null
+        $cfg = Get-DxConfig
+        $null = New-Item -ItemType Directory -Force -Path (Join-Path $cfg.SrDir) -ErrorAction SilentlyContinue
+        $null = New-Item -ItemType Directory -Force -Path (Join-Path $cfg.ResolvePath("cache")) -ErrorAction SilentlyContinue
+        $cfg
+    } else { $null }
+}
+$ErrorActionPreference = "Stop"
+$root = if ($dxConfig) { $dxConfig.Root } else { Split-Path -Parent $PSScriptRoot }
 
 $folders = Get-ChildItem -LiteralPath $root -Force -Directory | Sort-Object Name
 $rows = foreach ($folder in $folders) {
@@ -75,4 +87,13 @@ if ($Json) {
     "Hub directories: $($summary.hubDirectories)"
     "Junctions: $($summary.junctions)"
     "Dirty repos: $(@($summary.dirtyRepos).Count)"
+}
+
+# Write .sr for serializer daemon
+if ($dxConfig) {
+    Write-DxSr -Path (Join-Path $dxConfig.SrDir "audit-hub.sr") -Entries @{
+        tool = "audit-hub"
+        action = "run"
+        status = "ok"
+    }
 }

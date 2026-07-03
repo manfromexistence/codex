@@ -3,8 +3,20 @@ param(
     [string]$OutputPath
 )
 
-$ErrorActionPreference = 'Stop'
-$root = Split-Path -Parent $PSScriptRoot
+# Load DX config
+$ErrorActionPreference = "Continue"
+$dxConfig = & {
+    $modulePath = Join-Path $PSScriptRoot "dx-config.psm1"
+    if (Test-Path $modulePath) {
+        Import-Module $modulePath -Force -ErrorAction SilentlyContinue | Out-Null
+        $cfg = Get-DxConfig
+        $null = New-Item -ItemType Directory -Force -Path (Join-Path $cfg.SrDir) -ErrorAction SilentlyContinue
+        $null = New-Item -ItemType Directory -Force -Path (Join-Path $cfg.ResolvePath("cache")) -ErrorAction SilentlyContinue
+        $cfg
+    } else { $null }
+}
+$ErrorActionPreference = "Stop"
+$root = if ($dxConfig) { $dxConfig.Root } else { Split-Path -Parent $PSScriptRoot }
 $manifestRoot = Join-Path $root '.dx\manifests'
 
 if (-not (Test-Path -LiteralPath $Path)) {
@@ -126,3 +138,12 @@ foreach ($item in $items) {
 }
 
 Write-Output $OutputPath
+
+# Write .sr for serializer daemon
+if ($dxConfig) {
+    Write-DxSr -Path (Join-Path $dxConfig.SrDir "write-archive-manifest.sr") -Entries @{
+        tool = "write-archive-manifest"
+        action = "run"
+        status = "ok"
+    }
+}

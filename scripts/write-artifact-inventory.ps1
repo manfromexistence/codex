@@ -2,8 +2,20 @@ param(
     [string]$OutputPath
 )
 
-$ErrorActionPreference = 'Stop'
-$root = Split-Path -Parent $PSScriptRoot
+# Load DX config
+$ErrorActionPreference = "Continue"
+$dxConfig = & {
+    $modulePath = Join-Path $PSScriptRoot "dx-config.psm1"
+    if (Test-Path $modulePath) {
+        Import-Module $modulePath -Force -ErrorAction SilentlyContinue | Out-Null
+        $cfg = Get-DxConfig
+        $null = New-Item -ItemType Directory -Force -Path (Join-Path $cfg.SrDir) -ErrorAction SilentlyContinue
+        $null = New-Item -ItemType Directory -Force -Path (Join-Path $cfg.ResolvePath("cache")) -ErrorAction SilentlyContinue
+        $cfg
+    } else { $null }
+}
+$ErrorActionPreference = "Stop"
+$root = if ($dxConfig) { $dxConfig.Root } else { Split-Path -Parent $PSScriptRoot }
 $manifestRoot = Join-Path $root '.dx\manifests'
 $artifactNames = @('node_modules', 'target', 'target-debug', '.next', 'dist', 'coverage', '.cache', '.tmp', '.turbo', '.pytest_cache', '__pycache__')
 
@@ -71,3 +83,12 @@ foreach ($folder in Get-ChildItem -LiteralPath $root -Force -Directory | Sort-Ob
 }
 
 Write-Output $OutputPath
+
+# Write .sr for serializer daemon
+if ($dxConfig) {
+    Write-DxSr -Path (Join-Path $dxConfig.SrDir "write-artifact-inventory.sr") -Entries @{
+        tool = "write-artifact-inventory"
+        action = "run"
+        status = "ok"
+    }
+}

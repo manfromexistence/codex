@@ -5,8 +5,20 @@ param(
     [switch]$Json
 )
 
-$ErrorActionPreference = 'Stop'
-$root = Split-Path -Parent $PSScriptRoot
+# Load DX config
+$ErrorActionPreference = "Continue"
+$dxConfig = & {
+    $modulePath = Join-Path $PSScriptRoot "dx-config.psm1"
+    if (Test-Path $modulePath) {
+        Import-Module $modulePath -Force -ErrorAction SilentlyContinue | Out-Null
+        $cfg = Get-DxConfig
+        $null = New-Item -ItemType Directory -Force -Path (Join-Path $cfg.SrDir) -ErrorAction SilentlyContinue
+        $null = New-Item -ItemType Directory -Force -Path (Join-Path $cfg.ResolvePath("cache")) -ErrorAction SilentlyContinue
+        $cfg
+    } else { $null }
+}
+$ErrorActionPreference = "Stop"
+$root = if ($dxConfig) { $dxConfig.Root } else { Split-Path -Parent $PSScriptRoot }
 $baselinePath = Join-Path $root 'docs\policies\maintainability-baseline.json'
 $sourceExtensions = @('.rs', '.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.ps1')
 $ignoredParts = @(
@@ -192,4 +204,13 @@ if ($Json) {
 
 if ($result.errors -gt 0) {
     exit 1
+}
+
+# Write .sr for serializer daemon
+if ($dxConfig) {
+    Write-DxSr -Path (Join-Path $dxConfig.SrDir "check-maintainability.sr") -Entries @{
+        tool = "check-maintainability"
+        action = "run"
+        status = "ok"
+    }
 }
