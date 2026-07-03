@@ -1,17 +1,23 @@
 # DX — Universal Project Config, Cache & Tool System
 
 **Status:** Living document  
-**Last updated:** 2026-07-03  
+**Last updated:** 2026-07-03 (global cache section added)  
 **Audience:** DX contributors, AI assistants, and tool implementers
 
-This document describes the **DX Project System** — a universal contract that any project folder can adopt:
+This document describes the **DX Tool Contract** — three things every DX tool does in any project:
 
-- **`dx`** — Extensionless config file in Serializer LLM format. Every DX project root has one.
-- **`.dx/`** — Per-project cache and receipt hub for all DX tools working in that project.
-- **Serializer LLM → `.sr` → `.machine`** — The write/compile/read pipeline for all tool state.
-- Every DX tool reads `dx`, writes `.sr`, consumes `.machine`, and stores in `.dx/`.
+### 1. Read local `dx` config
+Every DX tool discovers and reads the nearest `dx` extensionless config file (walks up from cwd). This file holds all project settings, paths, and cache roots in Serializer LLM format. No DX tool hardcodes paths — everything comes from `dx`.
 
-The `G:\Dx` monorepo is the **first DX project** — we use it to build and test the system. When it works here, it works everywhere.
+### 2. Project cache → `.dx/` → `.sr` → `.machine`
+Every DX tool stores project-specific state and caches in `.dx/` under the project root. Tools write state as `.sr` files (Serializer LLM format, human-readable). A daemon auto-compiles `.sr` → `.machine` (compiled RKYV + zstd, zero-copy mmap). Tools consume `.machine` for fast reads, falling back to `.sr` when needed.
+
+### 3. Global cache → `LOCALDATA/dx/` → `.sr` → `.machine`
+Every DX tool stores machine-wide/global caches outside the project tree — by default `%LOCALAPPDATA%/dx/` on Windows, `$XDG_CACHE_HOME/dx/` or `~/.cache/dx/` on Unix (configurable via `paths.global_cache` in `dx`). Same pipeline: `.sr` write → auto-compile → `.machine` read. This keeps per-project folders clean and enables cross-project shared state (downloads, model weights, build artifacts, compiled indexes).
+
+**The pipeline for all state:** `Tool writes state → .sr (LLM format) → auto-compile → .machine (fast mmap) → tool reads .machine`
+
+The `G:\Dx` monorepo is the **first DX project** — we build and test the system here. When it works here, it works everywhere.
 
 ---
 
@@ -106,6 +112,39 @@ The root `dx` defines `paths.cache=".dx/cache"`. Currently some absolute `G:\` p
 **In any other project:**
 Same layout. `dx` + `.dx/` + Serializer. Portable.
 
+## 3a. Global Cache — Machine-Wide `LOCALDATA` Hub
+
+Every DX tool also stores **machine-wide/global caches** outside the project tree. This avoids duplicating large artifacts across projects and keeps `.dx/` lightweight.
+
+**Default locations (configurable via `paths.global_cache` in `dx`):**
+| OS      | Default path |
+|---------|-------------|
+| Windows | `%LOCALAPPDATA%/dx/` |
+| macOS   | `~/Library/Caches/dx/` |
+| Linux   | `$XDG_CACHE_HOME/dx/` or `~/.cache/dx/` |
+
+**Standard layout:**
+```
+LOCALDATA/dx/
+  <tool>/                  # per-tool global caches
+    *.sr                   # tool-written cache artifacts (LLM format)
+    *.machine              # compiled fast artifacts
+  serializer/              # shared .sr → .machine daemon workspace
+```
+
+**How tools use it:**
+- Tools write global state as `.sr` files under `LOCALDATA/dx/<tool>/` (LLM format).
+- The same `dx-sr-watch` daemon auto-compiles `.sr` → `.machine` here too.
+- Tools read `.machine` for fast access to downloads, model weights, build artifacts, indexes.
+- The `paths.global_cache` key in `dx` overrides the default if set.
+
+**When to use project vs global cache:**
+| Cache in `.dx/` (project) | Cache in `LOCALDATA/dx/` (global) |
+|---|---|
+| Per-project receipts, task state, build output | Downloaded models, SDKs, compiler caches |
+| Tool-specific working state | Shared indexes, asset downloads |
+| Checkpoint/analyze results | Cross-project reusable artifacts |
+
 ## 4. DX Tools Inventory
 
 All folders at root **except** these are DX tools: `bin`, `web`, `website`, `mobile`, `zzz`.
@@ -169,14 +208,14 @@ This table tracks how each DX tool in the monorepo (`G:\Dx`) implements the **pe
 
 ## 6. The Target — Every Tool in Every Project
 
-When any project folder has `dx` + `.dx/`, every DX tool should:
+When any project folder has `dx`, every DX tool should:
 
-1. **Discover** the project `dx` file (walk up from cwd).
-2. **Read** config from `dx` (or its compiled `.machine`) — paths, settings, cache root.
-3. **Write state** as `.sr` files (LLM format) under `.dx/serializer/`.
-4. **Produce/consume `.machine`** — compiled fast artifacts alongside `.sr` sources.
-5. **Store receipts and caches** under `.dx/<tool>/` as appropriate.
-6. **Never hardcode paths** — all paths come from `dx` or are relative to project root.
+1. **Read `dx` config** — discover the nearest `dx` file (walk up from cwd). All paths, settings, and cache roots come from `dx`. No hardcoded paths.
+2. **Write project cache as `.sr`** — store project-specific state under `.dx/serializer/` in LLM format.
+3. **Write global cache as `.sr`** — store machine-wide state under `LOCALDATA/dx/<tool>/` in LLM format.
+4. **Consume `.machine`** — the `dx-sr-watch` daemon auto-compiles all `.sr` → `.machine` (zero-copy mmap). Tools read `.machine` for fast access, fall back to `.sr`.
+5. **Store per-tool data** — project receipts/caches under `.dx/<tool>/`, global receipts under `LOCALDATA/dx/<tool>/`.
+6. **Never hardcode paths** — all paths from `dx` or relative to project root / `LOCALDATA`.
 
 The `G:\Dx` monorepo is where we build and verify this contract. When it works here, it works for any project anywhere.
 
@@ -187,8 +226,9 @@ The `G:\Dx` monorepo is where we build and verify this contract. When it works h
 - **20 Rust tools consume `.machine`** via `read_status()` fallback (`.machine` + `.sr` fallback).
 - **7 Python/PowerShell tools** (py, diffusion, train, scripts, logo, mcps, docs) use `.sr`-only — no `.machine` fast path (expected: these are not Rust tools).
 - **Starter template** at `templates/dx-starter/` ready for scaffolding.
-- **Hardcoded `G:\Dx` paths** remain in internal tool logic, justfiles, and scripts — not yet migrated to config-relative. Phase 3.
-- **Rust tools with git-based serializer dep** use inline modules instead of shared `dx-config` crate — they need to switch once published. Phase 4.
+- **Hardcoded `G:\Dx` paths** remain in internal tool logic, justfiles, and scripts — not yet migrated to config-relative.
+- **Rust tools with git-based serializer dep** use inline modules instead of shared `dx-config` crate — they need to switch once published.
+- **Global cache (`LOCALDATA/dx/`) is new** — no tools implement it yet. Needs shared utility (create global dirs, resolve path from `paths.global_cache` or default OS location), wiring in each tool, and `dx-sr-watch` coverage.
 
 ## 8. Roadmap
 
@@ -222,6 +262,43 @@ The `G:\Dx` monorepo is where we build and verify this contract. When it works h
 - [x] **Add `dx` + `.dx/` starter template** for new projects scaffolded by DX tools
 - [x] **Gate new tools** — they must implement the contract from day one
 - [x] **Publish `dx-config` crate** to crates.io or as a proper git dep
+
+### 🔄 Phase 5: Global Cache (`LOCALDATA/dx/`)
+
+- [ ] **Add `paths.global_cache` to root `dx`** with fallback to OS default (`%LOCALAPPDATA%/dx/`, `~/.cache/dx/`, etc.)
+- [ ] **Create shared global path resolver** in Rust (`dx_config::global_cache_dir()`), Python (`dx_config.global_cache_dir()`), PowerShell (`Get-DxGlobalCacheDir`)
+- [ ] **Wire `dx-sr-watch`** to also watch `LOCALDATA/dx/<tool>/*.sr` for auto-compile
+- [ ] **Add `paths.global_cache` to starter template** at `templates/dx-starter/`
+- [ ] **Migrate one tool** (e.g. `cli`) to store downloads/indexes in global cache as reference implementation
+- [ ] **Expand compliance table** with a "Global cache" column
+
+## 9. Tool Enforcement Queue — Full 3-Rule Compliance
+
+Each tool below must be verified/enforced for all **3 rules**:
+
+| # | Tool | What to do |
+|---|------|------------|
+| 1 | `check/` | Read `dx`, write project cache (`.dx/` → `.sr` → `.machine`), write global cache (`LOCALDATA/dx/check/`) |
+| 2 | `cli/` | Read `dx`, write project cache (`.dx/` → `.sr` → `.machine`), write global cache (`LOCALDATA/dx/cli/`) |
+| 3 | `dcp/` | Read `dx`, write project cache (`.dx/` → `.sr` → `.machine`), write global cache (`LOCALDATA/dx/dcp/`) |
+| 4 | `diffusion/` | Read `dx`, write project cache (`.dx/` → `.sr` → `.machine`), write global cache (`LOCALDATA/dx/diffusion/`) |
+| 5 | `driven/` | Read `dx`, write project cache (`.dx/` → `.sr` → `.machine`), write global cache (`LOCALDATA/dx/driven/`) |
+| 6 | `flow/` | Read `dx`, write project cache (`.dx/` → `.sr` → `.machine`), write global cache (`LOCALDATA/dx/flow/`) |
+| 7 | `forge/` | Read `dx`, write project cache (`.dx/` → `.sr` → `.machine`), write global cache (`LOCALDATA/dx/forge/`) |
+| 8 | `i18n/` | Read `dx`, write project cache (`.dx/` → `.sr` → `.machine`), write global cache (`LOCALDATA/dx/i18n/`) |
+| 9 | `icon/` | Read `dx`, write project cache (`.dx/` → `.sr` → `.machine`), write global cache (`LOCALDATA/dx/icon/`) |
+| 10 | `js/` | Read `dx`, write project cache (`.dx/` → `.sr` → `.machine`), write global cache (`LOCALDATA/dx/js/`) |
+| 11 | `media/` | Read `dx`, write project cache (`.dx/` → `.sr` → `.machine`), write global cache (`LOCALDATA/dx/media/`) |
+| 12 | `metasearch/` | Read `dx`, write project cache (`.dx/` → `.sr` → `.machine`), write global cache (`LOCALDATA/dx/metasearch/`) |
+| 13 | `native/` | Read `dx`, write project cache (`.dx/` → `.sr` → `.machine`), write global cache (`LOCALDATA/dx/native/`) |
+| 14 | `providers/` | Read `dx`, write project cache (`.dx/` → `.sr` → `.machine`), write global cache (`LOCALDATA/dx/providers/`) |
+| 15 | `py/` | Read `dx`, write project cache (`.dx/` → `.sr` → `.machine`), write global cache (`LOCALDATA/dx/py/`) |
+| 16 | `serializer/` | Read `dx`, write project cache (`.dx/` → `.sr` → `.machine`), write global cache (`LOCALDATA/dx/serializer/`) |
+| 17 | `style/` | Read `dx`, write project cache (`.dx/` → `.sr` → `.machine`), write global cache (`LOCALDATA/dx/style/`) |
+| 18 | `train/` | Read `dx`, write project cache (`.dx/` → `.sr` → `.machine`), write global cache (`LOCALDATA/dx/train/`) |
+| 19 | `www/` | Read `dx`, write project cache (`.dx/` → `.sr` → `.machine`), write global cache (`LOCALDATA/dx/www/`) |
+
+Each tool gets enforced one at a time by an AI agent. As each is completed, mark it with `[x]` and update the compliance table in §5.
 
 ## Related Files
 
@@ -265,7 +342,7 @@ Every tool in the monorepo now discovers and reads the project `dx` file on star
 - See `serializer/crates/dx-config/src/lib.rs` for the reference `read_sr_file` and `read_machine_or_sr` implementations
 - See `serializer/src/llm/convert.rs` for the `try_read_machine_or_sr` utility
 
-### All phases complete
+### Phases 1-4 complete
 
 All 4 phases of the DX Project System contract are now complete. The monorepo (`G:\Dx`) serves as the reference implementation — every tool discovers `dx`, writes `.sr`, consumes `.machine`, and stores in `.dx/`.
 
@@ -273,6 +350,18 @@ All 4 phases of the DX Project System contract are now complete. The monorepo (`
 - Upgrade `providers`, `media`, `icon`, `metasearch`, `agent`, `dcp`, `i18n` from path-based `serializer` dep to published `dx-config` git dep (once published)
 - Switch remaining inline `dx_config.rs` modules to shared `dx-config` crate
 - Keep compliance table in this document up to date as new tools are added
+
+### 🔄 Phase 5 — Global Cache (`LOCALDATA/dx/`)
+
+Phase 5 adds the third pillar: **machine-wide global cache** outside the project tree.
+
+**What needs to happen:**
+- Add `paths.global_cache` to root `dx` with OS-default fallback
+- Create shared `global_cache_dir()` in Rust, Python, and PowerShell
+- Wire `dx-sr-watch` to also watch `LOCALDATA/dx/<tool>/*.sr`
+- Add to starter template
+- Migrate one tool (e.g. `cli`) as reference implementation
+- Expand compliance table with "Global cache" column
 
 ### Shared module locations
 | Language | Location | How to use |

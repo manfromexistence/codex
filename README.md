@@ -848,3 +848,32 @@ And in our dx-chat homepage please always use the animateicons lucide-react icon
 
 Now the scroll-area should be on top of the header but currently its behind + at the header the integrations text is going outside of its box at the Resources header subheader
 
+Please tell me what opencode deskktop app uses - is it electron or tauri, nextjs or what?? And if we just use opencode desktop - do we still need th opencode cli installed to run it correctly or not?? at the G:\Dx\mobile\inspirations\opencode path
+
+1. Dx Tools
+2. Mobile
+3. Website
+4. Agent + Tui + Code
+
+Shohan@dx MINGW64 /g/Dx (main)
+$ ls -d */ | sed 's|/||' | nl -w1 -s'. '
+
+1. check/
+2. cli/
+3. dcp/
+4. diffusion/
+5. driven/
+6. flow/
+7. forge/
+8. i18n/
+9. icon/
+10. js/
+11. media/
+12. metasearch/
+13. native/
+14. providers/
+15. py/
+16. serializer/
+17. style/
+18. train/
+19. www/
