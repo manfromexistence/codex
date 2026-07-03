@@ -24,6 +24,11 @@
 !/docs/superpowers/plans/
 !/dx
 !/scripts/
+!/templates/
+!/templates/dx-starter/
+!/templates/dx-starter/*
+!/templates/dx-starter/.dx/
+!/templates/dx-starter/.dx/*
 
 /.dx/*
 !/.dx/launch-workspace.toml
