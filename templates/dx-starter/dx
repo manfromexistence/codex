@@ -1,4 +1,0 @@
-workspace.name="my-project"
-workspace.root="."
-
-paths.cache=".dx/cache"

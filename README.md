@@ -838,6 +838,8 @@ git clone https://github.com/mickadesign/fluid-functionalism fluid && cd fluid &
 git clone https://github.com/pqoqubbw/icons icons && cd icons && rm -rf .git && cd ..
 git clone https://github.com/mlc-ai/web-llm llm && cd llm && rm -rf .git && cd ..
 git clone https://github.com/anomalyco/opencode opencode && cd opencode && rm -rf .git && cd ..
+git clone https://github.com/ngxson/wllama wllama && cd wllama && rm -rf .git && cd ..
+git clone https://github.com/openclaw/openclaw openclaw && cd openclaw && rm -rf .git && cd ..
 ```
 
 In our g:dx/mobile there I have added a dx.html file so please create a a new page in our mobile and make that as the default and then just like using the components shadcn-ui please just recreate the website of dx.html I gave you!!!
