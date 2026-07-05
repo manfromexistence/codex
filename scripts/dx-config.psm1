@@ -107,10 +107,58 @@ function New-DxConfig {
     $config | Add-Member -MemberType ScriptProperty -Name "CliPath" -Value {
         $this.ResolvePath("cli")
     } -Force
+    $config | Add-Member -MemberType ScriptProperty -Name "DxHomeDir" -Value {
+        Get-DxHomeDir -Config $this
+    } -Force
     $config | Add-Member -MemberType ScriptProperty -Name "GlobalCacheDir" -Value {
         Get-DxGlobalCacheDir -Config $this
     } -Force
+    $config | Add-Member -MemberType ScriptProperty -Name "BinDir" -Value {
+        Get-DxHomeDir -Config $this | Join-Path -ChildPath "bin"
+    } -Force
+    $config | Add-Member -MemberType ScriptProperty -Name "ConfigDir" -Value {
+        Get-DxHomeDir -Config $this | Join-Path -ChildPath "config"
+    } -Force
+    $config | Add-Member -MemberType ScriptProperty -Name "DataDir" -Value {
+        Get-DxHomeDir -Config $this | Join-Path -ChildPath "data"
+    } -Force
     return $config
+}
+
+function Get-DxHomeDir {
+    <#
+    .SYNOPSIS
+        Return the DX home directory root for the given config.
+    .DESCRIPTION
+        Uses paths.dx_home from dx config if set, otherwise:
+        Windows: %LOCALAPPDATA%/dx
+        macOS:   ~/Library/Application Support/dx
+        Linux:   $XDG_DATA_HOME/dx or ~/.local/share/dx
+    .PARAMETER Config
+        A config object from Get-DxConfig.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [PSCustomObject]$Config
+    )
+    $raw = $Config.Settings["paths.dx_home"]
+    if ($raw) {
+        if ([System.IO.Path]::IsPathRooted($raw)) { return $raw }
+        return [System.IO.Path]::GetFullPath((Join-Path $Config.Root $raw))
+    }
+    $localAppData = [Environment]::GetEnvironmentVariable("LOCALAPPDATA")
+    if ($localAppData) {
+        return Join-Path $localAppData "dx"
+    }
+    $xdgData = [Environment]::GetEnvironmentVariable("XDG_DATA_HOME")
+    if ($xdgData) {
+        return Join-Path $xdgData "dx"
+    }
+    $homeData = Join-Path $env:USERPROFILE ".local\share" 2>$null
+    if (-not $homeData) {
+        $homeData = Join-Path $env:HOME ".local/share"
+    }
+    return Join-Path $homeData "dx"
 }
 
 function Get-DxGlobalCacheDir {
@@ -118,10 +166,8 @@ function Get-DxGlobalCacheDir {
     .SYNOPSIS
         Return the DX global cache directory for the given config.
     .DESCRIPTION
-        Uses paths.global_cache from dx config if set, otherwise:
-        Windows: %LOCALAPPDATA%/dx
-        macOS: ~/Library/Caches/dx
-        Linux: $XDG_CACHE_HOME/dx or ~/.cache/dx
+        Uses paths.global_cache from dx config if set, otherwise defaults to
+        <dx_home>/cache/.
     .PARAMETER Config
         A config object from Get-DxConfig.
     #>
@@ -134,19 +180,8 @@ function Get-DxGlobalCacheDir {
         if ([System.IO.Path]::IsPathRooted($raw)) { return $raw }
         return [System.IO.Path]::GetFullPath((Join-Path $Config.Root $raw))
     }
-    $localAppData = [Environment]::GetEnvironmentVariable("LOCALAPPDATA")
-    if ($localAppData) {
-        return Join-Path $localAppData "dx"
-    }
-    $xdgCache = [Environment]::GetEnvironmentVariable("XDG_CACHE_HOME")
-    if ($xdgCache) {
-        return Join-Path $xdgCache "dx"
-    }
-    $homeCache = Join-Path $env:USERPROFILE ".cache" 2>$null
-    if (-not $homeCache) {
-        $homeCache = Join-Path $env:HOME ".cache"
-    }
-    return Join-Path $homeCache "dx"
+    $home = Get-DxHomeDir -Config $Config
+    return Join-Path $home "cache"
 }
 
 function Write-DxSr {
@@ -195,4 +230,4 @@ function Write-DxSr {
     [System.IO.File]::Move($tmp, $Path)
 }
 
-Export-ModuleMember -Function Get-DxConfig, Write-DxSr, Get-DxGlobalCacheDir
+Export-ModuleMember -Function Get-DxConfig, Write-DxSr, Get-DxHomeDir, Get-DxGlobalCacheDir

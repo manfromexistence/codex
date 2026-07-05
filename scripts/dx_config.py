@@ -100,29 +100,52 @@ class DxConfig:
         return self.cache_dir.parent / "serializer"
 
     @property
+    def dx_home_dir(self) -> Path:
+        """Return the DX home directory root.
+
+        Uses paths.dx_home from dx config if set, otherwise:
+        Windows: %LOCALAPPDATA%/dx
+        macOS:   ~/Library/Application Support/dx
+        Linux:   $XDG_DATA_HOME/dx or ~/.local/share/dx
+        """
+        raw = self._settings.get("paths.dx_home", "")
+        if raw:
+            p = Path(raw)
+            return p if p.is_absolute() else (self.workspace_root / p)
+        if os.name == "nt":
+            return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "dx"
+        xdg = os.environ.get("XDG_DATA_HOME", "")
+        if xdg:
+            return Path(xdg) / "dx"
+        return Path.home() / ".local" / "share" / "dx"
+
+    @property
     def global_cache_dir(self) -> Path:
         """Return the global cache directory.
 
-        Uses paths.global_cache from dx config if set, otherwise:
-        Windows: %LOCALAPPDATA%/dx
-        macOS: ~/Library/Caches/dx
-        Linux: $XDG_CACHE_HOME/dx or ~/.cache/dx
+        Uses paths.global_cache from dx config if set, otherwise defaults to
+        `<dx_home>/cache/`.
         """
         raw = self._settings.get("paths.global_cache", "")
         if raw:
             p = Path(raw)
             return p if p.is_absolute() else (self.workspace_root / p)
-        if os.name == "nt":
-            localappdata = os.environ.get("LOCALAPPDATA", "")
-            if localappdata:
-                return Path(localappdata) / "dx"
-        else:
-            xdg = os.environ.get("XDG_CACHE_HOME", "")
-            if xdg:
-                return Path(xdg) / "dx"
-            home = Path.home()
-            return home / ".cache" / "dx"
-        return self.workspace_root / ".dx" / "global-cache"
+        return self.dx_home_dir / "cache"
+
+    @property
+    def bin_dir(self) -> Path:
+        """Return the binaries directory under DX home. (read-only, not in dx config)"""
+        return self.dx_home_dir / "bin"
+
+    @property
+    def config_dir(self) -> Path:
+        """Return the user config directory under DX home. (read-only)"""
+        return self.dx_home_dir / "config"
+
+    @property
+    def data_dir(self) -> Path:
+        """Return the app data directory under DX home. (read-only)"""
+        return self.dx_home_dir / "data"
 
     def get(self, key: str, default: str = "") -> str:
         return self._settings.get(key, default)

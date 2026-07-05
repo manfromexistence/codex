@@ -12,8 +12,8 @@ Every DX tool discovers and reads the nearest `dx` extensionless config file (wa
 ### 2. Project cache → `.dx/` → `.sr` → `.machine`
 Every DX tool stores project-specific state and caches in `.dx/` under the project root. Tools write state as `.sr` files (Serializer LLM format, human-readable). A daemon auto-compiles `.sr` → `.machine` (compiled RKYV + zstd, zero-copy mmap). Tools consume `.machine` for fast reads, falling back to `.sr` when needed.
 
-### 3. Global cache → `LOCALDATA/dx/` → `.sr` → `.machine`
-Every DX tool stores machine-wide/global caches outside the project tree — by default `%LOCALAPPDATA%/dx/` on Windows, `$XDG_CACHE_HOME/dx/` or `~/.cache/dx/` on Unix (configurable via `paths.global_cache` in `dx`). Same pipeline: `.sr` write → auto-compile → `.machine` read. This keeps per-project folders clean and enables cross-project shared state (downloads, model weights, build artifacts, compiled indexes).
+### 3. Global state → `<DX_HOME>/` → `.sr` → `.machine`
+Every DX tool stores machine-wide state under `<DX_HOME>/` — by default `%LOCALAPPDATA%/dx/` on Windows, `~/Library/Application Support/dx/` on macOS, `$XDG_DATA_HOME/dx/` or `~/.local/share/dx/` on Linux (overridable via `DX_HOME` env var or `paths.dx_home` in `dx`). Cache artifacts go under `<DX_HOME>/cache/`. Same pipeline: `.sr` write → auto-compile → `.machine` read. This keeps per-project folders clean and enables cross-project shared state (downloads, model weights, build artifacts, compiled indexes).
 
 **The pipeline for all state:** `Tool writes state → .sr (LLM format) → auto-compile → .machine (fast mmap) → tool reads .machine`
 
@@ -112,34 +112,53 @@ The root `dx` defines `paths.cache=".dx/cache"`. Currently some absolute `G:\` p
 **In any other project:**
 Same layout. `dx` + `.dx/` + Serializer. Portable.
 
-## 3a. Global Cache — Machine-Wide `LOCALDATA` Hub
+## 3a. Global State — `DX_HOME` Machine-Wide Root
 
-Every DX tool also stores **machine-wide/global caches** outside the project tree. This avoids duplicating large artifacts across projects and keeps `.dx/` lightweight.
+Every DX tool stores **machine-wide state** outside the project tree under `DX_HOME`. This avoids duplicating large artifacts across projects and keeps `.dx/` lightweight.
 
-**Default locations (configurable via `paths.global_cache` in `dx`):**
-| OS      | Default path |
-|---------|-------------|
-| Windows | `%LOCALAPPDATA%/dx/` |
-| macOS   | `~/Library/Caches/dx/` |
-| Linux   | `$XDG_CACHE_HOME/dx/` or `~/.cache/dx/` |
+**The `DX_HOME` environment variable** overrides the default root for all global DX state. If unset, the OS default is used:
 
-**Standard layout:**
+| OS      | Default `DX_HOME` |
+|---------|------------------|
+| Windows | `%LOCALAPPDATA%/dx/` (e.g. `C:\Users\<you>\AppData\Local\dx\`) |
+| macOS   | `~/Library/Application Support/dx/` |
+| Linux   | `$XDG_DATA_HOME/dx/` or `~/.local/share/dx/` |
+
+**Standard layout under `DX_HOME`:**
 ```
-LOCALDATA/dx/
-  <tool>/                  # per-tool global caches
-    *.sr                   # tool-written cache artifacts (LLM format)
-    *.machine              # compiled fast artifacts
-  serializer/              # shared .sr → .machine daemon workspace
+<DX_HOME>/
+  bin/                    # installed DX binaries (added to PATH by installer)
+    dx.exe
+    dx-cli.exe
+    dx-train.exe
+    dx-diffusion.exe
+    ...
+  cache/                  # download caches, model weights, compiled indexes
+    <tool>/               #   per-tool caches
+      *.sr                #   tool-written cache artifacts (LLM format)
+      *.machine           #   compiled fast artifacts
+    serializer/           #   shared .sr → .machine daemon workspace
+  config/                 # user configuration files
+    dx.toml
+  data/                   # application data (logs, databases, indexes)
+    <tool>/               #   per-tool data
 ```
 
-**How tools use it:**
-- Tools write global state as `.sr` files under `LOCALDATA/dx/<tool>/` (LLM format).
-- The same `dx-sr-watch` daemon auto-compiles `.sr` → `.machine` here too.
-- Tools read `.machine` for fast access to downloads, model weights, build artifacts, indexes.
-- The `paths.global_cache` key in `dx` overrides the default if set.
+**Key points:**
+- **Binaries** live in `bin/` under `DX_HOME` — never in the cache tree.
+- **Cache** lives in `cache/` under `DX_HOME` — configurable via `paths.global_cache` in `dx`.
+- **Config** lives in `config/` under `DX_HOME`.
+- **Data** lives in `data/` under `DX_HOME`.
+- The `paths.dx_home` key in `dx` overrides the default if set.
+- The `paths.global_cache` key in `dx` overrides `<DX_HOME>/cache/` if set.
+
+**Resolution order:**
+1. `DX_HOME` env var (absolute path required)
+2. `paths.dx_home` in the project `dx` file
+3. OS default (see table above)
 
 **When to use project vs global cache:**
-| Cache in `.dx/` (project) | Cache in `LOCALDATA/dx/` (global) |
+| Cache in `.dx/` (project) | Cache in `<DX_HOME>/cache/` (global) |
 |---|---|
 | Per-project receipts, task state, build output | Downloaded models, SDKs, compiler caches |
 | Tool-specific working state | Shared indexes, asset downloads |
@@ -192,11 +211,11 @@ This table tracks how each DX tool in the monorepo (`G:\Dx`) implements the full
 - **Shared `.sr` writing utilities** created for all 3 languages.
 - **19 of 19 tools write `.sr` artifacts** on state changes (py/ fixed 2026-07-04).
 - **17 of 19 tools consume `.machine`** via `read_status()` fallback pattern (exceptions: diffusion, train — Python tools).
-- **`dx-config` crate** has optional `machine` feature + `global_cache_dir()` for `.machine` reading.
+- **`dx-config` crate** has optional `machine` feature + `dx_home_dir()` / `global_cache_dir()` for path resolution.
 - **`serializer` crate** exports `try_read_machine_or_sr()` utility for tools with direct serializer dep.
-- **Global cache shared utilities** created in Rust (`dx_config::global_cache_dir()`), Python (`DxConfig.global_cache_dir`), PowerShell (`Get-DxGlobalCacheDir`).
-- **All 19 tools wired** to write global `.sr` cache under `LOCALDATA/dx/<tool>/`.
-- **`paths.global_cache`** added to root `dx` config (empty = OS default).
+- **Global state shared utilities** created in Rust (`dx_config::dx_home_dir()`, `dx_config::global_cache_dir()`), Python (`DxConfig.dx_home_dir`, `DxConfig.global_cache_dir`), PowerShell (`Get-DxHomeDir`, `Get-DxGlobalCacheDir`).
+- **All 19 tools wired** to write global `.sr` cache under `<DX_HOME>/cache/<tool>/`.
+- **`paths.dx_home`** and **`paths.global_cache`** added to root `dx` config (empty = OS default).
 - **Starter template** at `templates/dx-starter/` for new projects.
 
 ## 6. The Target — Every Tool in Every Project
@@ -205,10 +224,10 @@ When any project folder has `dx`, every DX tool should:
 
 1. **Read `dx` config** — discover the nearest `dx` file (walk up from cwd). All paths, settings, and cache roots come from `dx`. No hardcoded paths.
 2. **Write project cache as `.sr`** — store project-specific state under `.dx/serializer/` in LLM format.
-3. **Write global cache as `.sr`** — store machine-wide state under `LOCALDATA/dx/<tool>/` in LLM format.
+3. **Write global cache as `.sr`** — store machine-wide state under `<DX_HOME>/cache/<tool>/` in LLM format.
 4. **Consume `.machine`** — the `dx-sr-watch` daemon auto-compiles all `.sr` → `.machine` (zero-copy mmap). Tools read `.machine` for fast access, fall back to `.sr`.
-5. **Store per-tool data** — project receipts/caches under `.dx/<tool>/`, global receipts under `LOCALDATA/dx/<tool>/`.
-6. **Never hardcode paths** — all paths from `dx` or relative to project root / `LOCALDATA`.
+5. **Store per-tool data** — project receipts/caches under `.dx/<tool>/`, global receipts under `<DX_HOME>/<tool>/`.
+6. **Never hardcode paths** — all paths from `dx` or relative to project root / `<DX_HOME>`.
 
 The `G:\Dx` monorepo is where we build and verify this contract. When it works here, it works for any project anywhere.
 
@@ -218,7 +237,7 @@ The `G:\Dx` monorepo is where we build and verify this contract. When it works h
 - **17 of 19 tools consume `.machine`** via `read_status()` fallback. Diffusion and train (Python tools) are `.sr`-only — no `.machine` fast path (expected: Python doesn't have a Rust serializer FFI).
 - **`py/` .sr writing** was fixed 2026-07-04 — now all 19 tools write `.sr`.
 - **Starter template** at `templates/dx-starter/` ready for scaffolding.
-- **Global cache (`LOCALDATA/dx/`)** — Phase 5 implemented 2026-07-04. All 19 tools are wired with shared utilities in Rust, Python, and PowerShell. `dx-sr-watch` coverage of global paths is next.
+- **Global state (`<DX_HOME>/`)** — Phase 5 implemented 2026-07-04. All 19 tools are wired with shared utilities in Rust, Python, and PowerShell. `dx-sr-watch` coverage of global paths is next.
 - **Hardcoded paths** remain in some tools — not yet fully migrated to config-relative.
 
 ## 8. Roadmap
@@ -251,12 +270,12 @@ The `G:\Dx` monorepo is where we build and verify this contract. When it works h
 - [x] **Gate new tools** — they must implement the contract from day one
 - [x] **Publish `dx-config` crate** to crates.io or as a proper git dep
 
-### ✅ Phase 5: Global Cache (`LOCALDATA/dx/`) — Complete 2026-07-04
+### ✅ Phase 5: Global State (`<DX_HOME>/`) — Complete 2026-07-04
 
-- [x] **Add `paths.global_cache` to root `dx`** with fallback to OS default (`%LOCALAPPDATA%/dx/`, `~/.cache/dx/`, etc.)
-- [x] **Create shared global path resolver** in Rust (`dx_config::global_cache_dir()`), Python (`DxConfig.global_cache_dir`), PowerShell (`Get-DxGlobalCacheDir`)
-- [ ] **Wire `dx-sr-watch`** to also watch `LOCALDATA/dx/<tool>/*.sr` for auto-compile
-- [ ] **Add `paths.global_cache` to starter template** at `templates/dx-starter/`
+- [x] **Add `paths.dx_home` and `paths.global_cache` to root `dx`** with fallback to OS default
+- [x] **Create shared path resolvers** in Rust (`dx_config::dx_home_dir()`, `dx_config::global_cache_dir()`), Python (`DxConfig.dx_home_dir`, `DxConfig.global_cache_dir`), PowerShell (`Get-DxHomeDir`, `Get-DxGlobalCacheDir`)
+- [ ] **Wire `dx-sr-watch`** to also watch `<DX_HOME>/cache/<tool>/*.sr` for auto-compile
+- [ ] **Add `paths.dx_home` to starter template** at `templates/dx-starter/`
 - [ ] **Migrate one tool** (e.g. `cli`) to store downloads/indexes in global cache as reference implementation
 - [x] **Expand compliance table** with a "Global cache" column
 
@@ -266,9 +285,9 @@ All 19 tools have been verified for the full **3-rule contract**:
 
 1. ✅ **Read `dx` config** — discover and parse the nearest `dx` file
 2. ✅ **Write project cache** — `.dx/serializer/<tool>.sr` → `.machine` pipeline
-3. ✅ **Write global cache** — `LOCALDATA/dx/<tool>/<tool>.sr` via shared utility
+3. ✅ **Write global cache** — `<DX_HOME>/cache/<tool>/<tool>.sr` via shared utility
 
-| # | Tool | Read `dx` | `.sr` → `.machine` | Global cache (`LOCALDATA/dx/<tool>/`) |
+| # | Tool | Read `dx` | `.sr` → `.machine` | Global cache (`<DX_HOME>/cache/<tool>/`) |
 |---|------|:---------:|:------------------:|:-------------------------------------:|
 | 1 | `check/` | ✅ | ✅ | ✅ |
 | 2 | `cli/` | ✅ | ✅ | ✅ |
@@ -331,19 +350,20 @@ All 19 tools discover and read the project `dx` file on startup:
   - `serializer::try_read_machine_or_sr()` — full fast path for tools with serializer dep
   - `dx_config::read_machine_or_sr()` — optional `machine` feature on `dx-config` crate
 
-### ✅ Phase 5 Complete — Global Cache (`LOCALDATA/dx/`)
+### ✅ Phase 5 Complete — Global State (`<DX_HOME>/`)
 
-Phase 5 added the third pillar: **machine-wide global cache** outside the project tree.
+Phase 5 added the third pillar: **machine-wide state root** outside the project tree.
 
-**What was accomplished (2026-07-04):**
-- ✅ Add `paths.global_cache` to root `dx` with OS-default fallback
-- ✅ Create shared `global_cache_dir()` in Rust (`dx_config::global_cache_dir()`), Python (`DxConfig.global_cache_dir`), PowerShell (`Get-DxGlobalCacheDir`)
-- ✅ Wire all 19 tools to write global `.sr` cache (`LOCALDATA/dx/<tool>/<tool>.sr`)
+**What was accomplished (2026-07-05):**
+- ✅ Add `paths.dx_home` and `paths.global_cache` to root `dx` with OS-default fallback
+- ✅ Create shared resolvers in Rust (`dx_config::dx_home_dir()`, `dx_config::global_cache_dir()`), Python (`DxConfig.dx_home_dir`, `DxConfig.global_cache_dir`), PowerShell (`Get-DxHomeDir`, `Get-DxGlobalCacheDir`)
+- ✅ Add computed `bin_dir()`, `config_dir()`, `data_dir()` properties to all loaders
+- ✅ Wire all 19 tools to write global `.sr` cache (`<DX_HOME>/cache/<tool>/<tool>.sr`)
 - ✅ Fix `py/` `.sr` writing (was the last tool missing it)
 - ✅ Expand compliance table with "Global cache" column
 
 **Still to do:**
-- [ ] Wire `dx-sr-watch` to also watch `LOCALDATA/dx/<tool>/*.sr`
+- [ ] Wire `dx-sr-watch` to also watch `<DX_HOME>/cache/<tool>/*.sr`
 - [ ] Add to starter template
 - [ ] Migrate one tool (e.g. `cli`) as reference implementation
 

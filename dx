@@ -18,6 +18,7 @@ paths.serializer="serializer"
 paths.dx_agents="agent"
 paths.inspirations="inspirations"
 paths.cache=".dx/cache"
+paths.dx_home=""
 paths.global_cache=""
 paths.cargo_home="cli/.cargo-home"
 
